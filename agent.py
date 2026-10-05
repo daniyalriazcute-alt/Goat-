@@ -76,19 +76,21 @@ def run_aura(
     rag_context: str = "",
     memory_context: str = "",
     approved: bool = False,
+    human_approved: bool = False,
 ):
     """
     Execute Aura.
 
-    Compatible with the existing application interface.
+    Compatible with the application's existing argument names.
 
-    Supported arguments:
+    Supported:
         user_query
         memory
         retrieved_context
         rag_context
         memory_context
         approved
+        human_approved
     """
 
     # ========================================================
@@ -119,11 +121,8 @@ def run_aura(
 
 
     # ========================================================
-    # RAG / RETRIEVED CONTEXT
+    # RETRIEVED / RAG CONTEXT
     # ========================================================
-
-    # The existing app appears to use `retrieved_context`.
-    # We also support `rag_context`.
 
     if retrieved_context:
         knowledge_context = retrieved_context
@@ -139,9 +138,14 @@ def run_aura(
     # HUMAN APPROVAL
     # ========================================================
 
+    # Support both parameter names.
+    approval_granted = bool(
+        approved or human_approved
+    )
+
     approval_status = (
         "Approved"
-        if approved
+        if approval_granted
         else "Not required / not approved"
     )
 
@@ -298,7 +302,7 @@ CAREER GUIDANCE REQUIREMENTS
 OUTPUT REQUIREMENTS
 ============================================================
 
-- Answer directly.
+- Answer the user's actual question directly.
 - Be professional.
 - Be concise but useful.
 - Personalize using available context.
@@ -311,6 +315,10 @@ OUTPUT REQUIREMENTS
 - Return only the final user-facing answer.
 """
 
+
+    # ========================================================
+    # TASK
+    # ========================================================
 
     task = Task(
         description=task_description,
