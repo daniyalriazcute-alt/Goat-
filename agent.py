@@ -10,11 +10,10 @@ from pathlib import Path
 # 1. CREWAI + GROQ CACHE BREAKPOINT COMPATIBILITY FIX
 # ============================================================
 #
-# CrewAI adds "cache_breakpoint" to messages during Agent
-# execution. Groq does not accept this property.
+# CrewAI may add "cache_breakpoint" to messages.
+# Groq does not accept this property.
 #
-# IMPORTANT:
-# This patch MUST execute before creating the CrewAI Agent/LLM.
+# This patch must execute before creating the CrewAI Agent/LLM.
 # ============================================================
 
 try:
@@ -37,13 +36,11 @@ from crewai import Agent, Crew, LLM, Process, Task
 
 
 # ============================================================
-# 3. PATCH EXECUTOR REFERENCES
+# 3. PATCH CREWAI EXECUTOR REFERENCES
 # ============================================================
 #
 # Some CrewAI versions import mark_cache_breakpoint directly
-# inside the executor modules.
-#
-# These patches make the workaround more robust.
+# into executor modules.
 # ============================================================
 
 try:
@@ -152,7 +149,7 @@ Give actionable next steps whenever possible.
 
 
 # ============================================================
-# 7. MODEL
+# 7. MODEL CONFIGURATION
 # ============================================================
 
 MODEL = "groq/openai/gpt-oss-120b"
@@ -164,13 +161,16 @@ MODEL = "groq/openai/gpt-oss-120b"
 
 def _build_llm():
     """
-    Create the CrewAI LLM used by Aura.
+    Create the CrewAI LLM.
+
+    Reduced max_tokens helps control token consumption and
+    therefore reduces the chance of hitting Groq token limits.
     """
 
     return LLM(
         model=MODEL,
         temperature=0.2,
-        max_tokens=3000,
+        max_tokens=2000,
         timeout=90,
     )
 
@@ -181,7 +181,7 @@ def _build_llm():
 
 def _build_agent():
     """
-    Create the Aura AI Career & Skills Navigator agent.
+    Create Aura's AI Career & Skills Navigator agent.
     """
 
     try:
@@ -208,9 +208,12 @@ def _build_agent():
 
         allow_delegation=False,
 
-        max_iter=8,
+        # Reduced from 8 to 3 to minimize unnecessary
+        # model calls and Groq rate-limit consumption.
+        max_iter=3,
 
-        max_retry_limit=1,
+        # No automatic retry.
+        max_retry_limit=0,
 
         verbose=False,
     )
@@ -334,7 +337,7 @@ def run_aura(
     """
 
     # --------------------------------------------------------
-    # Validate query
+    # Validate user query
     # --------------------------------------------------------
 
     if user_query is None:
@@ -350,6 +353,7 @@ def run_aura(
             "question."
         )
 
+
     # --------------------------------------------------------
     # Normalize memory
     # --------------------------------------------------------
@@ -358,6 +362,7 @@ def run_aura(
         memory=memory,
         memory_context=memory_context,
     )
+
 
     # --------------------------------------------------------
     # Normalize RAG
@@ -368,14 +373,16 @@ def run_aura(
         rag_context=rag_context,
     )
 
+
     # --------------------------------------------------------
-    # Normalize approval
+    # Normalize human approval
     # --------------------------------------------------------
 
     approval_status = _normalize_approval(
         approved=approved,
         human_approved=human_approved,
     )
+
 
     # ========================================================
     # MEMORY SECTION
@@ -464,7 +471,7 @@ without appropriate confirmation.
 
 
     # ========================================================
-    # TASK
+    # TASK DESCRIPTION
     # ========================================================
 
     task_description = f"""
@@ -563,8 +570,8 @@ CAREER GUIDANCE REQUIREMENTS
 
 
 15. If the user requests a technical cybersecurity task,
-    clarify or assume an authorized defensive/educational
-    context and keep the guidance within that boundary.
+    keep the guidance within an authorized educational or
+    defensive context.
 
 
 FINAL RESPONSE REQUIREMENTS
@@ -650,9 +657,9 @@ use it appropriately.
         error_lower = error_message.lower()
 
 
-        # ----------------------------------------------------
+        # ====================================================
         # CACHE BREAKPOINT ERROR
-        # ----------------------------------------------------
+        # ====================================================
 
         if "cache_breakpoint" in error_lower:
 
@@ -662,21 +669,40 @@ use it appropriately.
                 "`cache_breakpoint` field.\n\n"
                 "The compatibility workaround is enabled in "
                 "`agent.py`.\n\n"
-                "Please make sure the latest `agent.py` has "
-                "been pushed to GitHub and the Streamlit app "
-                "has been rebooted so the new code is loaded."
+                "Please reboot the Streamlit application so "
+                "the latest code is loaded."
             )
 
 
-        # ----------------------------------------------------
+        # ====================================================
+        # RATE LIMIT ERROR
+        # ====================================================
+
+        if (
+            "rate limit" in error_lower
+            or "429" in error_message
+            or "too many requests" in error_lower
+        ):
+
+            return (
+                "The Groq API rate limit was reached.\n\n"
+                "Aura has been configured to use fewer agent "
+                "iterations and no automatic retries to reduce "
+                "API usage.\n\n"
+                "Please wait briefly and try the request again."
+            )
+
+
+        # ====================================================
         # API KEY / AUTHENTICATION
-        # ----------------------------------------------------
+        # ====================================================
 
         if (
             "api key" in error_lower
             or "authentication" in error_lower
             or "401" in error_message
             or "invalid_api_key" in error_lower
+            or "unauthorized" in error_lower
         ):
 
             return (
@@ -686,24 +712,26 @@ use it appropriately.
             )
 
 
-        # ----------------------------------------------------
-        # RATE LIMIT
-        # ----------------------------------------------------
+        # ====================================================
+        # MODEL NOT FOUND
+        # ====================================================
 
         if (
-            "rate limit" in error_lower
-            or "429" in error_message
+            "model not found" in error_lower
+            or "model_not_found" in error_lower
+            or "does not exist" in error_lower
         ):
 
             return (
-                "The Groq API rate limit was reached.\n\n"
-                "Please wait a moment and try again."
+                "The configured Groq model could not be found.\n\n"
+                "Please verify the GPT-OSS-120B model identifier "
+                "and the current Groq model availability."
             )
 
 
-        # ----------------------------------------------------
+        # ====================================================
         # TIMEOUT
-        # ----------------------------------------------------
+        # ====================================================
 
         if (
             "timeout" in error_lower
@@ -716,9 +744,25 @@ use it appropriately.
             )
 
 
-        # ----------------------------------------------------
+        # ====================================================
+        # CONNECTION ERROR
+        # ====================================================
+
+        if (
+            "connection error" in error_lower
+            or "connection refused" in error_lower
+            or "network error" in error_lower
+        ):
+
+            return (
+                "Aura could not connect to the AI service.\n\n"
+                "Please try again in a moment."
+            )
+
+
+        # ====================================================
         # GENERIC ERROR
-        # ----------------------------------------------------
+        # ====================================================
 
         return (
             "Aura encountered an error while processing "
