@@ -73,24 +73,36 @@ for key, value in DEFAULTS.items():
 # ============================================================
 
 def aura_data_uri() -> str:
-    """Return Aura avatar as a data URI."""
     if not AVATAR.exists():
         return ""
 
     return (
         "data:image/jpeg;base64,"
-        + base64.b64encode(AVATAR.read_bytes()).decode("ascii")
+        + base64.b64encode(
+            AVATAR.read_bytes()
+        ).decode("ascii")
     )
 
 
 def initials(name: str) -> str:
-    """Return up to two initials."""
-    parts = [p for p in name.strip().split() if p]
-    return "".join(p[0] for p in parts[:2]).upper() or "A"
+    parts = [
+        p for p in name.strip().split()
+        if p
+    ]
+
+    return (
+        "".join(
+            p[0] for p in parts[:2]
+        ).upper()
+        or "A"
+    )
 
 
-def avatar_url(email: str, size: int = 64) -> str:
-    """Generate a Gravatar URL."""
+def avatar_url(
+    email: str,
+    size: int = 64,
+) -> str:
+
     digest = hashlib.md5(
         email.strip().lower().encode()
     ).hexdigest()
@@ -126,7 +138,9 @@ def logout() -> None:
     st.session_state.profile = None
     st.session_state.messages = []
     st.session_state.pending_approval = None
-    st.session_state.memory = ConversationMemory(max_turns=8)
+    st.session_state.memory = ConversationMemory(
+        max_turns=8
+    )
     st.session_state.page = "Home"
     st.session_state.dashboard_page = "Chat with Aura"
 
@@ -139,56 +153,73 @@ def open_auth(mode: str) -> None:
 
 
 # ============================================================
-# AUTHENTICATION DIALOG
+# AUTHENTICATION
 # ============================================================
 
-@st.dialog("Welcome to Aura", width="small")
+@st.dialog(
+    "Welcome to Aura",
+    width="small",
+)
 def auth_dialog():
+
     mode = st.session_state.get(
         "auth_mode",
         "login",
     )
 
     st.markdown("### ✦ AuraAI")
-    st.caption("AI Career & Skills Navigator")
+    st.caption(
+        "AI Career & Skills Navigator"
+    )
 
     login_tab, register_tab = st.columns(2)
 
     with login_tab:
+
         if st.button(
             "Login",
             key="dialog_login_tab",
             use_container_width=True,
-            type="primary"
-            if mode == "login"
-            else "secondary",
+            type=(
+                "primary"
+                if mode == "login"
+                else "secondary"
+            ),
         ):
+
             st.session_state.auth_mode = "login"
             st.rerun()
 
     with register_tab:
+
         if st.button(
             "Register",
             key="dialog_register_tab",
             use_container_width=True,
-            type="primary"
-            if mode == "register"
-            else "secondary",
+            type=(
+                "primary"
+                if mode == "register"
+                else "secondary"
+            ),
         ):
+
             st.session_state.auth_mode = "register"
             st.rerun()
 
     if not firebase_available():
+
         st.warning(
             "Firebase authentication is not configured. "
-            "Add the Firebase settings required by the original "
-            "project to Streamlit Secrets before deploying."
+            "Add the Firebase settings required by the "
+            "original project to Streamlit Secrets before "
+            "deploying."
         )
 
     with st.form(
         "aura_auth_form",
         clear_on_submit=False,
     ):
+
         name = (
             st.text_input(
                 "Full name",
@@ -250,28 +281,44 @@ def auth_dialog():
     # --------------------------------------------------------
 
     if forgot_submitted:
-        try:
-            if not email.strip():
-                st.error("Enter your email first.")
-            else:
-                from firebase_service import send_password_reset
 
-                send_password_reset(email.strip())
+        try:
+
+            if not email.strip():
+
+                st.error(
+                    "Enter your email first."
+                )
+
+            else:
+
+                from firebase_service import (
+                    send_password_reset
+                )
+
+                send_password_reset(
+                    email.strip()
+                )
 
                 st.success(
-                    "If that account exists, Firebase has sent "
-                    "a password-reset email."
+                    "If that account exists, Firebase "
+                    "has sent a password-reset email."
                 )
 
         except Exception as exc:
-            st.error(str(exc))
+
+            st.error(
+                str(exc)
+            )
 
     # --------------------------------------------------------
     # LOGIN / REGISTER
     # --------------------------------------------------------
 
     if submitted:
+
         try:
+
             if not email or not password:
                 raise ValueError(
                     "Email and password are required."
@@ -291,7 +338,8 @@ def auth_dialog():
 
                 if len(password) < 8:
                     raise ValueError(
-                        "Use at least 8 characters for your password."
+                        "Use at least 8 characters "
+                        "for your password."
                     )
 
                 result = register_user(
@@ -302,6 +350,7 @@ def auth_dialog():
                 )
 
             else:
+
                 result = login_user(
                     email,
                     password,
@@ -309,21 +358,30 @@ def auth_dialog():
 
             st.session_state.authenticated = True
             st.session_state.user = result
-            st.session_state.profile = get_profile(result)
+            st.session_state.profile = get_profile(
+                result
+            )
             st.session_state.page = "Dashboard"
-            st.session_state.dashboard_page = "Chat with Aura"
+            st.session_state.dashboard_page = (
+                "Chat with Aura"
+            )
             st.session_state.auth_notice = ""
 
             if fcm_token and mode == "login":
+
                 send_login_notification(
                     fcm_token,
-                    result.get("name") or "Aura user",
+                    result.get("name")
+                    or "Aura user",
                 )
 
             st.rerun()
 
         except Exception as exc:
-            st.error(str(exc))
+
+            st.error(
+                str(exc)
+            )
 
 
 # ============================================================
@@ -331,9 +389,10 @@ def auth_dialog():
 # ============================================================
 
 def render_header() -> None:
-    """Responsive public header."""
 
-    with st.container(key="public-header"):
+    with st.container(
+        key="public-header"
+    ):
 
         (
             logo_col,
@@ -349,10 +408,13 @@ def render_header() -> None:
         )
 
         with logo_col:
+
             st.markdown(
                 '<div class="public-brand">'
                 '<div class="brand-mark">✦</div>'
-                '<div class="brand-name">Aura<span>AI</span></div>'
+                '<div class="brand-name">'
+                'Aura<span>AI</span>'
+                '</div>'
                 '<div class="brand-divider"></div>'
                 '<div class="brand-sub">'
                 'AI Career &amp; Skills Navigator'
@@ -362,45 +424,55 @@ def render_header() -> None:
             )
 
         with home_col:
+
             if st.button(
                 "Home",
                 key="public_Home",
                 use_container_width=True,
                 type=(
                     "primary"
-                    if st.session_state.page == "Home"
+                    if st.session_state.page
+                    == "Home"
                     else "secondary"
                 ),
             ):
+
                 navigate("Home")
 
         with about_col:
+
             if st.button(
                 "About",
                 key="public_About",
                 use_container_width=True,
                 type=(
                     "primary"
-                    if st.session_state.page == "About"
+                    if st.session_state.page
+                    == "About"
                     else "secondary"
                 ),
             ):
+
                 navigate("About")
 
         with contact_col:
+
             if st.button(
                 "Contact",
                 key="public_Contact",
                 use_container_width=True,
                 type=(
                     "primary"
-                    if st.session_state.page == "Contact"
+                    if st.session_state.page
+                    == "Contact"
                     else "secondary"
                 ),
             ):
+
                 navigate("Contact")
 
         with login_col:
+
             if st.session_state.authenticated:
 
                 if st.button(
@@ -409,6 +481,7 @@ def render_header() -> None:
                     use_container_width=True,
                     type="primary",
                 ):
+
                     navigate("Dashboard")
 
             else:
@@ -419,9 +492,11 @@ def render_header() -> None:
                     use_container_width=True,
                     type="secondary",
                 ):
+
                     open_auth("login")
 
         with register_col:
+
             if st.session_state.authenticated:
 
                 if st.button(
@@ -431,6 +506,7 @@ def render_header() -> None:
                     use_container_width=True,
                     type="secondary",
                 ):
+
                     logout()
 
             else:
@@ -441,13 +517,16 @@ def render_header() -> None:
                     use_container_width=True,
                     type="primary",
                 ):
+
                     open_auth("register")
 
     # --------------------------------------------------------
     # MOBILE PUBLIC NAVIGATION
     # --------------------------------------------------------
 
-    with st.container(key="mobile-public-nav"):
+    with st.container(
+        key="mobile-public-nav"
+    ):
 
         with st.expander(
             "☰  Menu",
@@ -466,6 +545,7 @@ def render_header() -> None:
                     key="mobile_public_home",
                     use_container_width=True,
                 ):
+
                     navigate("Home")
 
                 if st.button(
@@ -473,6 +553,7 @@ def render_header() -> None:
                     key="mobile_public_contact",
                     use_container_width=True,
                 ):
+
                     navigate("Contact")
 
             with c2:
@@ -482,6 +563,7 @@ def render_header() -> None:
                     key="mobile_public_about",
                     use_container_width=True,
                 ):
+
                     navigate("About")
 
                 if st.session_state.authenticated:
@@ -492,6 +574,7 @@ def render_header() -> None:
                         use_container_width=True,
                         type="primary",
                     ):
+
                         navigate("Dashboard")
 
                 else:
@@ -501,6 +584,7 @@ def render_header() -> None:
                         key="mobile_public_login",
                         use_container_width=True,
                     ):
+
                         open_auth("login")
 
                     if st.button(
@@ -509,6 +593,7 @@ def render_header() -> None:
                         use_container_width=True,
                         type="primary",
                     ):
+
                         open_auth("register")
 
 
@@ -547,9 +632,10 @@ def render_home() -> None:
 
         st.markdown(
             '<div class="hero-copy">'
-            'AI Career &amp; Skills Navigator helps you identify '
-            'skill gaps, find free learning resources, and explore '
-            'real-time job market trends — all in one place.'
+            'AI Career &amp; Skills Navigator helps you '
+            'identify skill gaps, find free learning '
+            'resources, and explore real-time job market '
+            'trends — all in one place.'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -581,11 +667,13 @@ def render_home() -> None:
         st.markdown(
             f'<div class="aura-stage">'
             f'<img src="{aura_data_uri()}"/>'
-            '<div class="aura-bubble">'
-            '<b>✦ &nbsp; Hi, I\'m Aura!</b>'
-            '<span>Your AI Career &amp; Skills Navigator</span>'
-            '</div>'
-            '</div>',
+            f'<div class="aura-bubble">'
+            f'<b>✦ &nbsp; Hi, I\'m Aura!</b>'
+            f'<span>'
+            f'Your AI Career &amp; Skills Navigator'
+            f'</span>'
+            f'</div>'
+            f'</div>',
             unsafe_allow_html=True,
         )
 
@@ -638,11 +726,12 @@ def render_about() -> None:
         '''
         <div class="section">
             <h2>About AuraAI</h2>
+
             <p class="muted">
-                Aura is an AI career coach that understands a user
-                goal, retrieves relevant knowledge, uses approved
-                tools when needed, and keeps the user in control
-                of consequential decisions.
+                Aura is an AI career coach that understands a
+                user goal, retrieves relevant knowledge, uses
+                approved tools when needed, and keeps the user
+                in control of consequential decisions.
             </p>
         </div>
         ''',
@@ -690,29 +779,18 @@ def render_about() -> None:
 # ============================================================
 
 def render_contact() -> None:
-    """
-    Contact page.
-
-    IMPORTANT:
-    The previous implementation converted every Firestore failure
-    into the generic message:
-
-        "The contact service is not configured yet."
-
-    This version catches the real exception so that we can identify
-    the exact Firebase/Firestore problem.
-    """
 
     st.markdown(
         '<div class="contact-hero">'
         '<span class="eyebrow">'
         '✦ &nbsp; We would love to hear from you'
         '</span>'
-        '<h2>Contact <span class="gradient">AuraAI</span></h2>'
+        '<h2>Contact <span class="gradient">'
+        'AuraAI</span></h2>'
         '<p class="muted">'
-        'Questions, feedback, collaboration ideas, or help with '
-        'the application? Send us a message and the AuraAI team '
-        'can follow up.'
+        'Questions, feedback, collaboration ideas, or help '
+        'with the application? Send us a message and the '
+        'AuraAI team can follow up.'
         '</p>'
         '</div>',
         unsafe_allow_html=True,
@@ -750,7 +828,8 @@ def render_contact() -> None:
             '<div class="contact-detail">'
             '<b>Response</b>'
             '<span>'
-            'We will review your message and follow up as appropriate.'
+            'We will review your message and follow up as '
+            'appropriate.'
             '</span>'
             '</div>'
             '</div>',
@@ -783,12 +862,14 @@ def render_contact() -> None:
             )
 
             with c1:
+
                 contact_name = st.text_input(
                     "Name",
                     placeholder="Your name",
                 )
 
             with c2:
+
                 contact_email = st.text_input(
                     "Email",
                     placeholder="you@example.com",
@@ -853,20 +934,22 @@ def render_contact() -> None:
 
                     else:
 
-                        # This should normally not be reached
-                        # with the updated profile_service.py.
                         st.error(
-                            "The contact message could not be saved."
+                            "The contact message could not "
+                            "be saved."
+                        )
+
+                        st.warning(
+                            "The Firestore function returned "
+                            "False. Check the Firebase Admin "
+                            "SDK configuration."
                         )
 
                 except Exception as exc:
 
-                    # ------------------------------------------------
-                    # IMPORTANT DIAGNOSTIC MESSAGE
-                    # ------------------------------------------------
-
                     st.error(
-                        "The contact message could not be saved."
+                        "The contact message could not "
+                        "be saved."
                     )
 
                     st.warning(
@@ -876,10 +959,13 @@ def render_contact() -> None:
 
 
 # ============================================================
-# MESSAGE HELPERS
+# CHAT HELPERS
 # ============================================================
 
-def _safe_markdown(text: str) -> str:
+def _safe_markdown(
+    text: str,
+) -> str:
+
     return html.escape(
         sanitize_output(text)
     ).replace(
@@ -894,7 +980,9 @@ def _format_time(
 
     return (
         value
-        or datetime.now().strftime("%I:%M %p")
+        or datetime.now().strftime(
+            "%I:%M %p"
+        )
     )
 
 
@@ -905,11 +993,12 @@ def _dashboard_intro() -> str:
     )
 
     return (
-        f"Great question, <b>{name}</b>! Becoming a stronger "
-        "career professional requires a mix of technical skills, "
-        "hands-on practice, and continuous learning. Aura can use "
-        "your goal, recent conversation, project knowledge base and "
-        "approved tools to build a practical plan."
+        f"Great question, <b>{name}</b>! Becoming a "
+        "stronger career professional requires a mix of "
+        "technical skills, hands-on practice, and continuous "
+        "learning. Aura can use your goal, recent conversation, "
+        "project knowledge base and approved tools to build a "
+        "practical plan."
     )
 
 
@@ -918,7 +1007,7 @@ def _seed_messages() -> list[dict]:
 
 
 # ============================================================
-# HITL / USER MESSAGE HANDLING
+# USER MESSAGE / HITL
 # ============================================================
 
 def _add_user_message(
@@ -926,7 +1015,9 @@ def _add_user_message(
     completion_key: str = "chat",
 ) -> None:
 
-    prompt = validate_user_input(prompt)
+    prompt = validate_user_input(
+        prompt
+    )
 
     if not prompt:
         return
@@ -951,7 +1042,9 @@ def _add_user_message(
         prompt,
     )
 
-    decision = requires_approval(prompt)
+    decision = requires_approval(
+        prompt
+    )
 
     if decision["required"]:
 
@@ -994,7 +1087,9 @@ def _run_and_store(
                 human_approved=approved,
             )
 
-            safe = sanitize_output(result)
+            safe = sanitize_output(
+                result
+            )
 
             st.session_state.memory.add(
                 "user",
@@ -1027,18 +1122,13 @@ def _run_and_store(
                     "role": "assistant",
                     "content": (
                         "I couldn't complete that request. "
-                        "Please try again. "
-                        "Technical detail: "
+                        "Please try again. Technical detail: "
                         f"{sanitize_output(exc)}"
                     ),
                     "time": _format_time(),
                 }
             )
 
-
-# ============================================================
-# HUMAN-IN-THE-LOOP DECISION CHECK
-# ============================================================
 
 def requires_approval(
     prompt: str,
@@ -1105,7 +1195,8 @@ def requires_approval(
             ),
             "action": (
                 "Use conversation context to prepare a "
-                "personalized comparison and practical next step."
+                "personalized comparison and practical "
+                "next step."
             ),
         }
 
@@ -1124,13 +1215,18 @@ def _render_message(
     message: dict,
 ) -> None:
 
-    role = message.get("role")
+    role = message.get(
+        "role"
+    )
+
     content = message.get(
         "content",
         "",
     )
 
-    safe = _safe_markdown(content)
+    safe = _safe_markdown(
+        content
+    )
 
     if role == "user":
 
@@ -1208,40 +1304,49 @@ def render_chat_panel() -> None:
                 st.markdown(
                     f'<div class="bubble assistant '
                     f'welcome-bubble">'
-                    f'<b style="color:#4db3ff">✦ Aura</b>'
+                    f'<b style="color:#4db3ff">'
+                    f'✦ Aura</b>'
                     f'<br>{_dashboard_intro()}'
-                    '<div class="section-box">'
-                    '<h5>How Aura can help</h5>'
-                    '<ul>'
-                    '<li>Identify skill gaps and foundations</li>'
-                    '<li>Create a career roadmap</li>'
-                    '<li>Find learning resources</li>'
-                    '<li>Research current opportunities when needed</li>'
-                    '</ul>'
-                    '</div>'
-                    '<span class="muted">'
-                    'Start by telling Aura your target role '
-                    'and current experience.'
-                    '</span>'
-                    '</div>',
+                    f'<div class="section-box">'
+                    f'<h5>How Aura can help</h5>'
+                    f'<ul>'
+                    f'<li>Identify skill gaps and foundations</li>'
+                    f'<li>Create a career roadmap</li>'
+                    f'<li>Find learning resources</li>'
+                    f'<li>Research current opportunities when needed</li>'
+                    f'</ul>'
+                    f'</div>'
+                    f'<span class="muted">'
+                    f'Start by telling Aura your target role '
+                    f'and current experience.'
+                    f'</span>'
+                    f'</div>',
                     unsafe_allow_html=True,
                 )
 
-            for message in st.session_state.messages:
-                _render_message(message)
+            for message in (
+                st.session_state.messages
+            ):
+
+                _render_message(
+                    message
+                )
 
         # ----------------------------------------------------
         # HITL APPROVAL
         # ----------------------------------------------------
 
-        pending = st.session_state.pending_approval
+        pending = (
+            st.session_state.pending_approval
+        )
 
         if pending:
 
             st.warning(
                 "Human approval required\n\n"
                 f"{pending['reason']}\n\n"
-                f"Requested action: {pending['action']}"
+                f"Requested action: "
+                f"{pending['action']}"
             )
 
             a, b = st.columns(2)
@@ -1255,7 +1360,9 @@ def render_chat_panel() -> None:
                     use_container_width=True,
                 ):
 
-                    query = pending["query"]
+                    query = pending[
+                        "query"
+                    ]
 
                     st.session_state.pending_approval = None
 
@@ -1285,8 +1392,9 @@ def render_chat_panel() -> None:
                             "role": "assistant",
                             "content": (
                                 "No problem. I will not proceed "
-                                "with that action. Tell me how you "
-                                "would like to adjust the request."
+                                "with that action. Tell me how "
+                                "you would like to adjust the "
+                                "request."
                             ),
                             "time": _format_time(),
                         }
@@ -1319,7 +1427,10 @@ def render_chat_panel() -> None:
             ),
         ]
 
-        for col, (label, key) in zip(
+        for col, (
+            label,
+            key,
+        ) in zip(
             chip_cols,
             chips,
         ):
@@ -1373,13 +1484,15 @@ def render_chat_panel() -> None:
 
         if send and prompt:
 
-            _add_user_message(prompt)
+            _add_user_message(
+                prompt
+            )
 
             st.rerun()
 
 
 # ============================================================
-# LEFT DASHBOARD SIDEBAR
+# LEFT SIDEBAR
 # ============================================================
 
 def render_left_sidebar() -> None:
@@ -1394,11 +1507,26 @@ def render_left_sidebar() -> None:
     st.session_state.profile = profile
 
     items = [
-        ("⌂  Chat with Aura", "chat"),
-        ("▱  Career Roadmap", "roadmap"),
-        ("◇  Skills", "skills"),
-        ("▣  Opportunities", "opportunities"),
-        ("▤  Resources", "resources"),
+        (
+            "⌂  Chat with Aura",
+            "chat",
+        ),
+        (
+            "▱  Career Roadmap",
+            "roadmap",
+        ),
+        (
+            "◇  Skills",
+            "skills",
+        ),
+        (
+            "▣  Opportunities",
+            "opportunities",
+        ),
+        (
+            "▤  Resources",
+            "resources",
+        ),
     ]
 
     with st.container(
@@ -1409,7 +1537,10 @@ def render_left_sidebar() -> None:
 
             selected = (
                 st.session_state.dashboard_page
-                == label.split("  ", 1)[-1]
+                == label.split(
+                    "  ",
+                    1,
+                )[-1]
             )
 
             if st.button(
@@ -1424,7 +1555,10 @@ def render_left_sidebar() -> None:
             ):
 
                 st.session_state.dashboard_page = (
-                    label.split("  ", 1)[-1]
+                    label.split(
+                        "  ",
+                        1,
+                    )[-1]
                 )
 
                 st.rerun()
@@ -1471,7 +1605,8 @@ def render_left_sidebar() -> None:
         # ----------------------------------------------------
 
         st.markdown(
-            '<div class="recent"><b>Recent Chats</b>',
+            '<div class="recent">'
+            '<b>Recent Chats</b>',
             unsafe_allow_html=True,
         )
 
@@ -1535,7 +1670,7 @@ def render_left_sidebar() -> None:
 
 
 # ============================================================
-# RIGHT DASHBOARD SIDEBAR
+# RIGHT SIDEBAR
 # ============================================================
 
 def render_right_sidebar() -> None:
@@ -1543,10 +1678,6 @@ def render_right_sidebar() -> None:
     with st.container(
         key="dashboard-right"
     ):
-
-        # ----------------------------------------------------
-        # AURA CARD
-        # ----------------------------------------------------
 
         aura_card_html = (
             '<div class="aura-card">'
@@ -1568,10 +1699,6 @@ def render_right_sidebar() -> None:
             aura_card_html,
             unsafe_allow_html=True,
         )
-
-        # ----------------------------------------------------
-        # FACTS
-        # ----------------------------------------------------
 
         facts = [
             (
@@ -1600,7 +1727,11 @@ def render_right_sidebar() -> None:
             '<div class="facts-card">'
         )
 
-        for icon, title, subtitle in facts:
+        for (
+            icon,
+            title,
+            subtitle,
+        ) in facts:
 
             facts_html += (
                 '<div class="fact">'
@@ -1652,7 +1783,11 @@ def render_right_sidebar() -> None:
             ),
         ]
 
-        for label, prompt, key in actions:
+        for (
+            label,
+            prompt,
+            key,
+        ) in actions:
 
             if st.button(
                 label + "  ›",
@@ -1690,7 +1825,7 @@ def render_right_sidebar() -> None:
 
 
 # ============================================================
-# PROFILE
+# PROFILE PANEL
 # ============================================================
 
 def render_profile_panel() -> None:
@@ -1748,7 +1883,9 @@ def render_profile_panel() -> None:
 
 def render_dashboard_content() -> None:
 
-    page = st.session_state.dashboard_page
+    page = (
+        st.session_state.dashboard_page
+    )
 
     if page in (
         "Chat with Aura",
@@ -1758,8 +1895,8 @@ def render_dashboard_content() -> None:
 
     prompts = {
         "Career Roadmap": (
-            "Generate a practical career roadmap for my "
-            "current goal. Ask for my target role and "
+            "Generate a practical career roadmap for "
+            "my current goal. Ask for my target role and "
             "experience if needed."
         ),
         "Skills": (
@@ -1930,6 +2067,7 @@ def render_mobile_dashboard_nav() -> None:
 def render_dashboard() -> None:
 
     if not st.session_state.authenticated:
+
         navigate("Home")
         return
 
@@ -2001,8 +2139,8 @@ def render_dashboard() -> None:
                 )
 
                 st.caption(
-                    "Progress updates when a career capability "
-                    "is successfully completed."
+                    "Progress updates when a career "
+                    "capability is successfully completed."
                 )
 
                 if st.button(
@@ -2011,7 +2149,10 @@ def render_dashboard() -> None:
                     use_container_width=True,
                 ):
 
-                    st.session_state.notifications_read = True
+                    st.session_state.notifications_read = (
+                        True
+                    )
+
                     st.rerun()
 
         # ----------------------------------------------------
@@ -2070,16 +2211,17 @@ def render_dashboard() -> None:
                     type="primary",
                     use_container_width=True,
                 ):
+
                     logout()
 
     # --------------------------------------------------------
-    # MOBILE NAV
+    # MOBILE DASHBOARD NAVIGATION
     # --------------------------------------------------------
 
     render_mobile_dashboard_nav()
 
     # --------------------------------------------------------
-    # MAIN DASHBOARD
+    # DASHBOARD SHELL
     # --------------------------------------------------------
 
     with st.container(
@@ -2092,6 +2234,7 @@ def render_dashboard() -> None:
         )
 
         with left:
+
             render_left_sidebar()
 
         with center:
@@ -2115,6 +2258,7 @@ def render_dashboard() -> None:
                 render_dashboard_content()
 
         with right:
+
             render_right_sidebar()
 
 
@@ -2144,7 +2288,7 @@ elif st.session_state.page == "Dashboard":
 
 
 # ============================================================
-# PUBLIC FOOTER
+# FOOTER
 # ============================================================
 
 if st.session_state.page != "Dashboard":
