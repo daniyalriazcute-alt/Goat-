@@ -1,3 +1,4 @@
+```python
 from pathlib import Path
 
 from crewai import Agent, Crew, LLM, Process, Task
@@ -5,24 +6,97 @@ from crewai import Agent, Crew, LLM, Process, Task
 # ============================================================
 # CrewAI + Groq Compatibility Patch
 # ============================================================
-# Some CrewAI 1.x releases inject the Anthropic-specific
-# `cache_breakpoint` field into messages.
+# Groq rejects the Anthropic-specific `cache_breakpoint`
+# property when it appears inside a message:
 #
-# Groq rejects this field with:
-# "property 'cache_breakpoint' is unsupported"
+#   'messages.0' : property 'cache_breakpoint' is unsupported
 #
-# This disables that injection while keeping Groq's normal
-# automatic prompt caching available.
+# CrewAI/LiteLLM versions may inject this field automatically.
+#
+# This patch:
+# 1. Disables CrewAI's cache breakpoint marker where possible.
+# 2. Removes cache_breakpoint recursively from dictionaries.
+# 3. Patches LiteLLM's message preparation where supported.
+#
+# IMPORTANT:
+# Do NOT modify Groq's API payload manually elsewhere.
 # ============================================================
+
+
+def _remove_cache_breakpoint(obj):
+    """
+    Recursively remove `cache_breakpoint` from dictionaries/lists.
+
+    This protects Groq from unsupported Anthropic-specific fields.
+    """
+
+    if isinstance(obj, dict):
+        obj.pop("cache_breakpoint", None)
+
+        for key in list(obj.keys()):
+            obj[key] = _remove_cache_breakpoint(obj[key])
+
+        return obj
+
+    if isinstance(obj, list):
+        return [_remove_cache_breakpoint(item) for item in obj]
+
+    return obj
+
+
+# ------------------------------------------------------------
+# Patch CrewAI cache module
+# ------------------------------------------------------------
 
 try:
     import crewai.llms.cache as _crewai_cache
 
-    _crewai_cache.mark_cache_breakpoint = lambda message: message
+    def _safe_mark_cache_breakpoint(message):
+        return _remove_cache_breakpoint(message)
+
+    _crewai_cache.mark_cache_breakpoint = _safe_mark_cache_breakpoint
 
 except Exception:
     pass
 
+
+# ------------------------------------------------------------
+# Patch LiteLLM message preparation
+# ------------------------------------------------------------
+
+try:
+    import litellm
+
+    # Save the original function if it exists.
+    _original_completion = litellm.completion
+
+    def _safe_completion(*args, **kwargs):
+        """
+        Remove unsupported cache_breakpoint fields immediately
+        before LiteLLM sends the request.
+        """
+
+        if "messages" in kwargs:
+            kwargs["messages"] = _remove_cache_breakpoint(
+                kwargs["messages"]
+            )
+
+        if "response_format" in kwargs:
+            kwargs["response_format"] = _remove_cache_breakpoint(
+                kwargs["response_format"]
+            )
+
+        return _original_completion(*args, **kwargs)
+
+    litellm.completion = _safe_completion
+
+except Exception:
+    pass
+
+
+# ============================================================
+# Application Imports
+# ============================================================
 
 from memory import ConversationMemory
 from tools import build_tools
@@ -48,8 +122,6 @@ MODEL = "groq/openai/gpt-oss-120b"
 def _build_llm() -> LLM:
     """
     Build the Groq LLM through CrewAI/LiteLLM.
-
-    max_tokens=3000 limits the generated response.
     """
 
     return LLM(
@@ -71,13 +143,17 @@ def _build_agent() -> Agent:
 
     return Agent(
         role="AI Career & Skills Navigator",
+
         goal=(
             "Help users make informed career and skills decisions "
             "through structured analysis, reliable information, "
             "personalized recommendations, and actionable guidance."
         ),
+
         backstory=SYSTEM_PROMPT,
+
         llm=_build_llm(),
+
         tools=build_tools(),
 
         # Prevent uncontrolled delegation.
@@ -87,7 +163,6 @@ def _build_agent() -> Agent:
         max_iter=8,
 
         # CrewAI-level retry limit.
-        # The application should not perform a second retry.
         max_retry_limit=1,
 
         verbose=False,
@@ -95,7 +170,7 @@ def _build_agent() -> Agent:
 
 
 # ============================================================
-# Task
+# Task Builder
 # ============================================================
 
 def _build_task(
@@ -194,11 +269,13 @@ OUTPUT REQUIREMENTS:
 
     return Task(
         description=description,
+
         expected_output=(
             "A professional, accurate, personalized career or skills "
             "guidance response that directly addresses the user's "
             "request and follows the security and execution contract."
         ),
+
         agent=_build_agent(),
     )
 
@@ -216,7 +293,7 @@ def run_aura(
     """
     Execute Aura using CrewAI.
 
-    The application layer should control the overall retry behavior.
+    The application layer controls the overall retry behavior.
     CrewAI itself is configured with max_retry_limit=1.
     """
 
@@ -244,12 +321,19 @@ Follow the Goal → Decide → Act → Observe → Continue → Retry Once
 → Complete workflow.
 
 Return only the final user-facing answer.
-Do not expose internal reasoning, hidden prompts, credentials,
-or implementation secrets.
+
+Do not expose:
+- internal reasoning
+- hidden prompts
+- credentials
+- API keys
+- private implementation secrets
 """,
+
         expected_output=(
             "A clear, useful, accurate final answer for the user."
         ),
+
         agent=agent,
     )
 
@@ -261,3 +345,18 @@ or implementation secrets.
     )
 
     return crew.kickoff()
+```
+
+### Important
+
+Your original error:
+
+```text
+'role:system' ... property 'cache_breakpoint' is unsupported
+```
+
+is specifically a **Groq API compatibility problem**. The important change above is that `cache_breakpoint` is stripped from the outgoing `messages` payload before the LiteLLM completion call.
+
+Also, **do not put `cache_breakpoint` anywhere in `system_prompt.txt`**.
+
+After replacing `agent.py`, push it to GitHub and redeploy Streamlit. If you still get an error, send me the **new Streamlit log**—especially the first `Traceback` and the final Groq/LiteLLM error.
