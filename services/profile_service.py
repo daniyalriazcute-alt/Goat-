@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+import re
 
 try:
     from firebase_service import _db
 except Exception:
-    _db = lambda: None
+    _db = None
 
 
 # ============================================================
@@ -25,24 +26,52 @@ PROGRESS_KEYS = {
 
 
 # ============================================================
-# TIME HELPERS
+# TIME
 # ============================================================
 
 def _now() -> str:
-    """
-    Return current UTC timestamp as an ISO-8601 string.
-    """
     return datetime.now(timezone.utc).isoformat()
 
 
 # ============================================================
-# PROFILE DEFAULTS
+# FIRESTORE CLIENT
 # ============================================================
 
-def _defaults(user: dict[str, Any]) -> dict[str, Any]:
+def _get_db():
     """
-    Create the default AuraAI profile structure.
+    Return the same Firestore Admin client used by
+    the rest of the AuraAI application.
     """
+
+    if _db is None:
+        raise RuntimeError(
+            "firebase_service._db could not be imported."
+        )
+
+    try:
+        db = _db()
+    except Exception as exc:
+        raise RuntimeError(
+            "Firebase Admin Firestore initialization failed: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    if db is None:
+        raise RuntimeError(
+            "Firestore client is None. "
+            "Check the [firebase] section in Streamlit Secrets."
+        )
+
+    return db
+
+
+# ============================================================
+# DEFAULT PROFILE
+# ============================================================
+
+def _defaults(
+    user: dict[str, Any],
+) -> dict[str, Any]:
 
     now = _now()
 
@@ -60,18 +89,12 @@ def _defaults(user: dict[str, Any]) -> dict[str, Any]:
 
 
 # ============================================================
-# PROGRESS CALCULATION
+# PROGRESS
 # ============================================================
 
 def _calculate_progress(
     completed: list[str],
 ) -> int:
-    """
-    Calculate profile completion progress.
-
-    Unknown completion items are ignored.
-    Duplicate items are counted only once.
-    """
 
     return min(
         100,
@@ -83,65 +106,40 @@ def _calculate_progress(
 
 
 # ============================================================
-# FIRESTORE DATABASE HELPER
-# ============================================================
-
-def _get_database():
-    """
-    Safely obtain the Firebase Admin Firestore client.
-
-    Returns:
-        Firestore client or None.
-    """
-
-    try:
-        db = _db()
-        return db
-
-    except Exception:
-        return None
-
-
-# ============================================================
-# GET USER PROFILE
+# GET PROFILE
 # ============================================================
 
 def get_profile(
     user: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Retrieve a user's profile from Firestore.
-
-    If the profile does not exist, default values are returned.
-    """
 
     profile = _defaults(user)
 
-    db = _get_database()
-
     uid = user.get("uid")
 
-    if db is not None and uid:
+    if uid:
 
         try:
 
-            document = (
+            db = _get_db()
+
+            snapshot = (
                 db.collection("users")
                 .document(uid)
                 .get()
             )
 
-            data = (
-                document.to_dict()
-                if document.exists
-                else {}
-            )
+            if snapshot.exists:
 
-            if data:
+                data = (
+                    snapshot.to_dict()
+                    or {}
+                )
+
                 profile.update(data)
 
         except Exception:
-            # Profile retrieval should never crash the UI.
+            # Do not break AuraAI if profile loading fails.
             pass
 
     completed = list(
@@ -158,26 +156,20 @@ def get_profile(
 
 
 # ============================================================
-# MARK PROFILE ITEM COMPLETE
+# MARK COMPLETE
 # ============================================================
 
 def mark_complete(
     user: dict[str, Any],
     item: str,
 ) -> dict[str, Any]:
-    """
-    Mark a particular AuraAI section as completed.
-
-    Example:
-        mark_complete(user, "chat")
-    """
 
     item = str(item).strip()
 
-    if not item:
-        return get_profile(user)
-
     profile = get_profile(user)
+
+    if not item:
+        return profile
 
     completed = set(
         profile.get("completed") or []
@@ -185,45 +177,40 @@ def mark_complete(
 
     completed.add(item)
 
-    profile["completed"] = sorted(
-        completed
+    completed_list = sorted(completed)
+
+    progress = _calculate_progress(
+        completed_list
     )
 
-    profile["progress"] = _calculate_progress(
-        profile["completed"]
-    )
+    updated_at = _now()
 
-    profile["updated_at"] = _now()
-
-    db = _get_database()
+    profile["completed"] = completed_list
+    profile["progress"] = progress
+    profile["updated_at"] = updated_at
 
     uid = user.get("uid")
 
-    if db is not None and uid:
+    if uid:
 
         try:
+
+            db = _get_db()
 
             (
                 db.collection("users")
                 .document(uid)
                 .set(
                     {
-                        "completed": profile[
-                            "completed"
-                        ],
-                        "progress": profile[
-                            "progress"
-                        ],
-                        "updated_at": profile[
-                            "updated_at"
-                        ],
+                        "completed": completed_list,
+                        "progress": progress,
+                        "updated_at": updated_at,
                     },
                     merge=True,
                 )
             )
 
         except Exception:
-            # Progress persistence should not crash AuraAI.
             pass
 
     return profile
@@ -237,32 +224,32 @@ def set_goal(
     user: dict[str, Any],
     goal: str,
 ) -> dict[str, Any]:
-    """
-    Save the user's career goal and mark the goal section
-    as completed.
-    """
 
-    goal = str(goal).strip()[:500]
+    clean_goal = (
+        str(goal)
+        .strip()
+        [:500]
+    )
 
     profile = get_profile(user)
 
-    profile["career_goal"] = goal
+    profile["career_goal"] = clean_goal
     profile["updated_at"] = _now()
-
-    db = _get_database()
 
     uid = user.get("uid")
 
-    if db is not None and uid:
+    if uid:
 
         try:
+
+            db = _get_db()
 
             (
                 db.collection("users")
                 .document(uid)
                 .set(
                     {
-                        "career_goal": goal,
+                        "career_goal": clean_goal,
                         "updated_at": profile[
                             "updated_at"
                         ],
@@ -289,47 +276,43 @@ def save_recent_chat(
     title: str,
     prompt: str,
 ) -> dict[str, Any]:
-    """
-    Store the user's latest chat prompts.
-
-    Maximum:
-        8 recent conversations.
-    """
 
     profile = get_profile(user)
 
-    item = {
+    new_chat = {
         "title": str(title).strip()[:120],
         "prompt": str(prompt).strip()[:1000],
         "timestamp": _now(),
     }
 
+    existing_chats = list(
+        profile.get("recent_chats") or []
+    )
+
     chats = [
-        item,
-        *list(
-            profile.get("recent_chats") or []
-        ),
+        new_chat,
+        *existing_chats,
     ]
 
-    profile["recent_chats"] = chats[:8]
-    profile["updated_at"] = _now()
+    chats = chats[:8]
 
-    db = _get_database()
+    profile["recent_chats"] = chats
+    profile["updated_at"] = _now()
 
     uid = user.get("uid")
 
-    if db is not None and uid:
+    if uid:
 
         try:
+
+            db = _get_db()
 
             (
                 db.collection("users")
                 .document(uid)
                 .set(
                     {
-                        "recent_chats": profile[
-                            "recent_chats"
-                        ],
+                        "recent_chats": chats,
                         "updated_at": profile[
                             "updated_at"
                         ],
@@ -345,6 +328,28 @@ def save_recent_chat(
 
 
 # ============================================================
+# EMAIL VALIDATION
+# ============================================================
+
+def _valid_email(
+    email: str,
+) -> bool:
+
+    pattern = (
+        r"^[A-Za-z0-9._%+-]+"
+        r"@[A-Za-z0-9.-]+\."
+        r"[A-Za-z]{2,}$"
+    )
+
+    return bool(
+        re.fullmatch(
+            pattern,
+            email,
+        )
+    )
+
+
+# ============================================================
 # SAVE CONTACT MESSAGE
 # ============================================================
 
@@ -355,162 +360,111 @@ def save_contact_message(
     message: str,
 ) -> bool:
     """
-    Save a Contact Us submission to Firestore.
+    Save a Contact Us message into Firestore.
 
-    Firestore collection:
+    Collection:
         contact_messages
 
-    Every submission receives a new automatically generated
-    Firestore document ID.
-
-    Raises:
-        RuntimeError:
-            When Firestore is unavailable or the write fails.
-
-    Returns:
-        True when the message is successfully saved.
+    This function intentionally raises a RuntimeError
+    when Firestore fails so the application can show
+    the actual technical reason.
     """
 
     # --------------------------------------------------------
-    # INPUT NORMALIZATION
+    # CLEAN INPUT
     # --------------------------------------------------------
 
-    clean_name = (
-        str(name)
-        .strip()
-        [:120]
-    )
+    name = str(name).strip()[:120]
 
-    clean_email = (
-        str(email)
-        .strip()
-        [:254]
-    )
+    email = str(email).strip()[:254]
 
-    clean_subject = (
-        str(subject)
-        .strip()
-        [:200]
-    )
+    subject = str(subject).strip()[:200]
 
-    clean_message = (
-        str(message)
-        .strip()
-        [:5000]
-    )
+    message = str(message).strip()[:5000]
 
     # --------------------------------------------------------
-    # BASIC VALIDATION
+    # VALIDATE
     # --------------------------------------------------------
 
-    if not clean_name:
+    if not name:
 
         raise ValueError(
-            "Contact name cannot be empty."
+            "Name is required."
         )
 
-    if not clean_email:
+    if not email:
 
         raise ValueError(
-            "Contact email cannot be empty."
+            "Email is required."
         )
 
-    if not clean_message:
+    if not _valid_email(email):
 
         raise ValueError(
-            "Contact message cannot be empty."
+            "Invalid email address."
+        )
+
+    if not message:
+
+        raise ValueError(
+            "Message is required."
         )
 
     # --------------------------------------------------------
-    # EMAIL VALIDATION
+    # CREATE FIRESTORE DOCUMENT
     # --------------------------------------------------------
 
-    if (
-        "@" not in clean_email
-        or "." not in clean_email.split("@")[-1]
-    ):
-
-        raise ValueError(
-            "Please enter a valid email address."
-        )
-
-    # --------------------------------------------------------
-    # FIRESTORE DATA
-    # --------------------------------------------------------
-
-    values = {
-        "name": clean_name,
-        "email": clean_email,
-        "subject": clean_subject,
-        "message": clean_message,
+    contact_data = {
+        "name": name,
+        "email": email,
+        "subject": subject,
+        "message": message,
         "created_at": _now(),
     }
 
     # --------------------------------------------------------
-    # GET FIRESTORE CLIENT
+    # GET FIRESTORE
     # --------------------------------------------------------
 
     try:
 
-        db = _get_database()
+        db = _get_db()
 
     except Exception as exc:
 
         raise RuntimeError(
-            "Unable to initialize the Firestore client: "
+            "Could not obtain Firestore client. "
             f"{type(exc).__name__}: {exc}"
         ) from exc
 
-    if db is None:
-
-        raise RuntimeError(
-            "Firestore Admin SDK is not initialized. "
-            "Check the [firebase] section in Streamlit "
-            "Secrets and make sure the Firebase Admin "
-            "service-account configuration is valid."
-        )
-
     # --------------------------------------------------------
-    # WRITE CONTACT MESSAGE
+    # WRITE
     # --------------------------------------------------------
 
     try:
 
-        collection = db.collection(
+        collection_ref = db.collection(
             "contact_messages"
         )
 
-        result = collection.add(
-            values
+        document_ref = collection_ref.document()
+
+        document_ref.set(
+            contact_data
         )
-
-        # Firebase Admin SDK normally returns:
-        # (DocumentReference, WriteResult)
-        #
-        # We intentionally do not expose document IDs
-        # to the user.
-
-        if result is None:
-
-            raise RuntimeError(
-                "Firestore returned no result after "
-                "the contact message write."
-            )
 
         return True
 
     except Exception as exc:
 
         error_type = type(exc).__name__
-        error_message = str(exc).strip()
 
-        if not error_message:
-            error_message = (
-                "No additional Firebase error message "
-                "was returned."
-            )
+        error_message = (
+            str(exc).strip()
+            or "No additional error information."
+        )
 
         raise RuntimeError(
-            "Firestore contact_messages write failed. "
+            "Firestore could not save the contact message. "
             f"{error_type}: {error_message}"
         ) from exc
