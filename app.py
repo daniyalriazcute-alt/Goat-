@@ -903,59 +903,119 @@ def render_contact() -> None:
 
         if submitted:
 
-            if (
-                not contact_name.strip()
-                or not contact_email.strip()
-                or not message.strip()
-            ):
+            # Basic validation
+            if not contact_name.strip():
 
                 st.error(
-                    "Please complete your name, email and "
-                    "message before sending."
+                    "Please enter your name."
+                )
+
+            elif not contact_email.strip():
+
+                st.error(
+                    "Please enter your email address."
+                )
+
+            elif not message.strip():
+
+                st.error(
+                    "Please enter your message."
                 )
 
             else:
 
-                try:
+                # Basic email validation
+                email_value = contact_email.strip()
 
-                    saved = save_contact_message(
-                        contact_name,
-                        contact_email,
-                        subject,
-                        message,
-                    )
-
-                    if saved:
-
-                        st.success(
-                            "Message received. Thank you for "
-                            "contacting AuraAI."
-                        )
-
-                    else:
-
-                        st.error(
-                            "The contact message could not "
-                            "be saved."
-                        )
-
-                        st.warning(
-                            "The Firestore function returned "
-                            "False. Check the Firebase Admin "
-                            "SDK configuration."
-                        )
-
-                except Exception as exc:
+                if (
+                    "@" not in email_value
+                    or "." not in email_value.split("@")[-1]
+                ):
 
                     st.error(
-                        "The contact message could not "
-                        "be saved."
+                        "Please enter a valid email address."
                     )
 
-                    st.warning(
-                        "Firebase/Firestore diagnostic: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
+                else:
+
+                    try:
+
+                        saved = save_contact_message(
+                            contact_name,
+                            email_value,
+                            subject,
+                            message,
+                        )
+
+                        if saved:
+
+                            st.success(
+                                "Message sent successfully! "
+                                "Thank you for contacting AuraAI."
+                            )
+
+                        else:
+
+                            # This should normally not happen
+                            # with the updated profile_service.py,
+                            # but it is kept as a safe fallback.
+
+                            st.error(
+                                "The contact message could "
+                                "not be saved."
+                            )
+
+                            st.warning(
+                                "Firestore returned an unsuccessful "
+                                "save result. Please check the "
+                                "Firebase Admin SDK configuration."
+                            )
+
+                    except RuntimeError as exc:
+
+                        # ------------------------------------------------
+                        # FIRESTORE DIAGNOSTIC
+                        # ------------------------------------------------
+                        #
+                        # The updated profile_service.py raises
+                        # RuntimeError containing the Firestore
+                        # failure reason.
+                        #
+                        # We display the diagnostic only to help
+                        # identify the deployment problem.
+                        #
+                        # Firebase credentials/private keys are
+                        # NOT displayed here.
+                        # ------------------------------------------------
+
+                        st.error(
+                            "The contact message could not be saved."
+                        )
+
+                        with st.expander(
+                            "Show technical details"
+                        ):
+
+                            st.code(
+                                str(exc),
+                                language="text",
+                            )
+
+                    except Exception as exc:
+
+                        st.error(
+                            "Something went wrong while sending "
+                            "your message."
+                        )
+
+                        with st.expander(
+                            "Show technical details"
+                        ):
+
+                            st.code(
+                                f"{type(exc).__name__}: {exc}",
+                                language="text",
+                            )
 
 
 # ============================================================
@@ -2267,6 +2327,7 @@ def render_dashboard() -> None:
 # ============================================================
 
 if st.session_state.page != "Dashboard":
+
     render_header()
 
 
